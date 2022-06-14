@@ -1,0 +1,18 @@
+[package]
+name = "listup-law"
+version = "0.1.0"
+edition = "2021"
+description = "法律のXMLファイルがあるフォルダから、法律の公布年月日やファイル置き場などのデータをリストアップしてJSONファイルにする"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.57"
+clap = {version = "3.1.18", features = ["derive"] }
+csv = "1.1.6"
+encoding_rs = "0.8.31"
+log = "0.4.17"
+quick-xml = "0.22.0"
+serde = {version = "1.0.137", features = ["derive"]}
+serde_json = "1.0.81"
+simplelog = "0.12.0"
