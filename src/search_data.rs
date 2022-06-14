@@ -1,6 +1,6 @@
 use anyhow::Result;
 use csv::ReaderBuilder;
-use encoding_rs;
+use encoding_rs::SHIFT_JIS;
 use log::*;
 use quick_xml::{events::*, Reader};
 use serde::Serialize;
@@ -140,7 +140,7 @@ pub struct LawId {
 /// 法令種別,法令番号,法令名,法令名読み,旧法令名,公布日,改正法令名,改正法令番号,改正法令公布日,施行日,施行日備考,法令ID,本文URL,未施行,所管課確認中
 pub fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>> {
   let s = fs::read(file_path)?;
-  let (res, _, _) = encoding_rs::SHIFT_JIS.decode(&s);
+  let (res, _, _) = SHIFT_JIS.decode(&s);
   let csv_str_utf8 = res.into_owned();
   let mut reader = ReaderBuilder::new().from_reader(csv_str_utf8.as_bytes());
 
