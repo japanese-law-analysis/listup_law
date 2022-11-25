@@ -1,11 +1,13 @@
 use anyhow::Result;
 use csv::ReaderBuilder;
-use encoding_rs::SHIFT_JIS;
+use encoding_rs::{Encoding, SHIFT_JIS};
 use log::*;
-use quick_xml::{events::*, Reader};
+use quick_xml::{encoding, events::*, Reader};
 use serde::Serialize;
 use std::collections::HashMap;
-use std::{fs, fs::File, io::BufReader, str};
+use std::sync::{Arc, Mutex};
+use tokio::{fs, fs::File, io::BufReader};
+use tokio_stream::StreamExt;
 
 /// 元号
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -21,7 +23,9 @@ pub enum Era {
 pub struct Date {
   pub era: Era,
   pub year: u16,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub month: Option<u8>,
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub day: Option<u8>,
 }
 
@@ -34,25 +38,32 @@ pub struct LawData {
   pub id: String,
 }
 
-pub fn make_law_data(
+pub async fn make_law_data(
   reader: &mut Reader<BufReader<File>>,
   file: &str,
   law_id_map: &HashMap<String, LawId>,
 ) -> Result<Option<LawData>> {
+  let utf8 = Encoding::for_label(b"utf-8").unwrap();
+
   let mut buf = Vec::new();
-  let mut law_num = String::new();
+
   let mut is_law_num_mode = false;
-  let mut law_date = None;
+  let law_num = Arc::new(Mutex::new(String::new()));
+  let law_date = Arc::new(Mutex::new(None));
 
   reader.trim_text(true);
   loop {
-    match reader.read_event(&mut buf) {
-      Ok(Event::Start(tag)) => match tag.name() {
+    match reader.read_event_into_async(&mut buf).await {
+      Ok(Event::Start(tag)) => match tag.name().as_ref() {
         b"Law" => {
           let era_str = tag
             .attributes()
-            .find(|res| reader.decode(res.as_ref().unwrap().key).unwrap() == "Era")
-            .map(|res| reader.decode(&res.unwrap().value).unwrap().to_string())
+            .find(|res| encoding::decode(res.as_ref().unwrap().key.0, utf8).unwrap() == "Era")
+            .map(|res| {
+              encoding::decode(&res.unwrap().value, utf8)
+                .unwrap()
+                .to_string()
+            })
             .unwrap();
           let era = match &*era_str {
             "Meiji" => Era::Meiji,
@@ -67,28 +78,41 @@ pub fn make_law_data(
           };
           let year = tag
             .attributes()
-            .find(|res| reader.decode(res.as_ref().unwrap().key).unwrap() == "Year")
-            .map(|res| reader.decode(&res.unwrap().value).unwrap().to_string())
+            .find(|res| encoding::decode(res.as_ref().unwrap().key.0, utf8).unwrap() == "Year")
+            .map(|res| {
+              encoding::decode(&res.unwrap().value, utf8)
+                .unwrap()
+                .to_string()
+            })
             .unwrap()
             .parse()
             .unwrap();
           let month = tag
             .attributes()
             .find(|res| {
-              let s = reader.decode(res.as_ref().unwrap().key).unwrap();
+              let s = encoding::decode(res.as_ref().unwrap().key.0, utf8).unwrap();
               s == "Month" || s == "PromulgateMonth"
             })
-            .map(|res| reader.decode(&res.unwrap().value).unwrap().to_string())
+            .map(|res| {
+              encoding::decode(&res.unwrap().value, utf8)
+                .unwrap()
+                .to_string()
+            })
             .map(|s| s.parse().unwrap());
           let day = tag
             .attributes()
             .find(|res| {
-              let s = reader.decode(res.as_ref().unwrap().key).unwrap();
+              let s = encoding::decode(res.as_ref().unwrap().key.0, utf8).unwrap();
               s == "Day" || s == "PromulgateDay"
             })
-            .map(|res| reader.decode(&res.unwrap().value).unwrap().to_string())
+            .map(|res| {
+              encoding::decode(&res.unwrap().value, utf8)
+                .unwrap()
+                .to_string()
+            })
             .map(|s| s.parse().unwrap());
-          law_date = Some(Date {
+          let mut law_date = law_date.lock().unwrap();
+          *law_date = Some(Date {
             era,
             year,
             month,
@@ -99,13 +123,14 @@ pub fn make_law_data(
         _ => (),
       },
       Ok(Event::End(tag)) => {
-        if let b"LawNum" = tag.name() {
+        if let b"LawNum" = tag.name().as_ref() {
           is_law_num_mode = false
         }
       }
       Ok(Event::Text(text)) => {
         if is_law_num_mode {
-          law_num = str::from_utf8(text.escaped())?.to_string();
+          let mut law_num = law_num.lock().unwrap();
+          *law_num = encoding::decode(&text.into_inner(), utf8)?.to_string();
         }
       }
       Ok(Event::Eof) => break,
@@ -114,12 +139,16 @@ pub fn make_law_data(
     }
   }
 
-  if let Some(law_id_name) = law_id_map.get(&law_num) {
+  let law_date = law_date.lock().unwrap();
+  let law_date = &*law_date;
+  let law_num = law_num.lock().unwrap();
+  let law_num = &*law_num;
+  if let Some(law_id_name) = law_id_map.get(law_num) {
     Ok(Some(LawData {
-      date: law_date.unwrap(),
+      date: law_date.clone().unwrap(),
       file: file.to_string(),
       name: law_id_name.clone().name,
-      num: law_num,
+      num: law_num.clone(),
       id: law_id_name.clone().id,
     }))
   } else {
@@ -138,23 +167,27 @@ pub struct LawId {
 
 /// `all_law_list.csv`ファイルをもとに法令IDなどを取得する
 /// 法令種別,法令番号,法令名,法令名読み,旧法令名,公布日,改正法令名,改正法令番号,改正法令公布日,施行日,施行日備考,法令ID,本文URL,未施行,所管課確認中
-pub fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>> {
-  let s = fs::read(file_path)?;
+pub async fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>> {
+  let s = fs::read(file_path).await?;
   let (res, _, _) = SHIFT_JIS.decode(&s);
   let csv_str_utf8 = res.into_owned();
   let mut reader = ReaderBuilder::new().from_reader(csv_str_utf8.as_bytes());
 
-  let mut map = HashMap::new();
+  let db = Arc::new(Mutex::new(HashMap::new()));
 
-  for data in reader.records() {
+  let mut reader_stream = tokio_stream::iter(reader.records());
+  while let Some(data) = reader_stream.next().await {
     let data = data?;
     //print!("{:?}", data.get(1));
+    let mut db = db.lock().unwrap();
     let law_id = LawId {
       id: data.get(11).unwrap().to_string(),
       name: data.get(2).unwrap().to_string(),
     };
-    map.insert(data.get(1).unwrap().to_string(), law_id);
+    db.insert(data.get(1).unwrap().to_string(), law_id);
   }
 
-  Ok(map)
+  let db = db.lock().unwrap();
+  let db = &*db;
+  Ok(db.clone())
 }

@@ -3,9 +3,10 @@ use clap::Parser;
 use log::*;
 use quick_xml::Reader;
 use simplelog::*;
-use std::fs::*;
-use std::io::{BufReader, Write};
 use std::path::{Path, PathBuf};
+use tokio::fs::*;
+use tokio::io::{AsyncWriteExt, BufReader};
+use tokio_stream::StreamExt;
 
 mod search_data;
 
@@ -23,16 +24,18 @@ struct Args {
   input: String,
 }
 
-fn get_law_xml_file_path_lst(work_dir: &str) -> Result<Vec<(String, PathBuf)>> {
+/// e-govで配布されているファイルは"法令データ一式/foobarbaz/foobarbaz.xml"のような形で配布されていて、、
+/// work_dirに"法令データ一式"が入ると想定している
+async fn get_law_xml_file_path_lst(work_dir: &str) -> Result<Vec<(String, PathBuf)>> {
   let mut lst = vec![];
-  for entry in read_dir(work_dir)? {
-    let entry = entry?;
-    if entry.file_type()?.is_dir() {
-      let new_dir = Path::new(work_dir).join(entry.file_name());
-      for new_entry in read_dir(&new_dir)? {
-        let new_entry = new_entry?;
-        if new_entry.file_type()?.is_file() {
-          let name = Path::new(&entry.file_name()).join(new_entry.file_name());
+  let mut work_dir_info = read_dir(work_dir).await?;
+  while let Some(dir_entry) = work_dir_info.next_entry().await? {
+    if dir_entry.file_type().await?.is_dir() {
+      let new_path = Path::new(work_dir).join(dir_entry.file_name());
+      let mut new_dir = read_dir(&new_path).await?;
+      while let Some(new_entry) = new_dir.next_entry().await? {
+        if new_entry.file_type().await?.is_file() {
+          let name = Path::new(&dir_entry.file_name()).join(new_entry.file_name());
           lst.push((name.to_string_lossy().to_string(), new_entry.path()))
         }
       }
@@ -51,44 +54,49 @@ fn init_logger() -> Result<()> {
   Ok(())
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
   let args = Args::parse();
 
   init_logger()?;
 
   info!("[START] get law id: {:?}", &args.input);
-  let law_id_data = search_data::make_law_id_data(&args.input)?;
+  let law_id_data = search_data::make_law_id_data(&args.input).await?;
   info!("[END] get law id: {:?}", &args.input);
 
   info!("[START] get law list");
-  let law_xml_file_path_lst = get_law_xml_file_path_lst(&args.work)?;
+  let law_xml_file_path_lst = get_law_xml_file_path_lst(&args.work).await?;
   info!("[END] get law list");
 
-  let mut output_file = File::create(&args.output)?;
+  let mut output_file = File::create(&args.output).await?;
   info!("[START] write json file");
-  output_file.write_all("[".as_bytes())?;
+  output_file.write_all("[".as_bytes()).await?;
 
   let mut is_head = true;
 
-  for (file_name, file_path) in law_xml_file_path_lst.iter() {
+  let mut law_xml_file_path_stream = tokio_stream::iter(law_xml_file_path_lst.iter());
+
+  while let Some((file_name, file_path)) = law_xml_file_path_stream.next().await {
     info!("[START] work file: {:?}", file_path);
-    let mut reader = Reader::from_reader(BufReader::new(File::open(file_path)?));
+    let f = File::open(file_path).await?;
+    let mut reader = Reader::from_reader(BufReader::new(f));
     info!("[START] data write: {:?}", file_path);
-    if let Some(law_data) = search_data::make_law_data(&mut reader, file_name, &law_id_data)? {
+    if let Some(law_data) = search_data::make_law_data(&mut reader, file_name, &law_id_data).await?
+    {
       let law_data_json_str = serde_json::to_string(&law_data)?;
       if is_head {
-        output_file.write_all("\n".as_bytes())?;
+        output_file.write_all("\n".as_bytes()).await?;
         is_head = false;
       } else {
-        output_file.write_all(",\n".as_bytes())?;
+        output_file.write_all(",\n".as_bytes()).await?;
       }
-      output_file.write_all(law_data_json_str.as_bytes())?;
+      output_file.write_all(law_data_json_str.as_bytes()).await?;
       info!("[END] data write: {:?}", file_path);
     }
   }
-  output_file.write_all("\n]".as_bytes())?;
+  output_file.write_all("\n]".as_bytes()).await?;
   info!("[END write json file");
-  output_file.flush()?;
+  output_file.flush().await?;
 
   Ok(())
 }
