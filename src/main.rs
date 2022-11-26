@@ -8,7 +8,8 @@ use tokio::fs::*;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio_stream::StreamExt;
 
-mod search_data;
+use listup_law;
+
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -61,7 +62,7 @@ async fn main() -> Result<()> {
   init_logger()?;
 
   info!("[START] get law id: {:?}", &args.input);
-  let law_id_data = search_data::make_law_id_data(&args.input).await?;
+  let law_id_data = listup_law::make_law_id_data(&args.input).await?;
   info!("[END] get law id: {:?}", &args.input);
 
   info!("[START] get law list");
@@ -81,7 +82,7 @@ async fn main() -> Result<()> {
     let f = File::open(file_path).await?;
     let mut reader = Reader::from_reader(BufReader::new(f));
     info!("[START] data write: {:?}", file_path);
-    if let Some(law_data) = search_data::make_law_data(&mut reader, file_name, &law_id_data).await?
+    if let Some(law_data) = listup_law::make_law_data(&mut reader, file_name, &law_id_data).await?
     {
       let law_data_json_str = serde_json::to_string(&law_data)?;
       if is_head {
