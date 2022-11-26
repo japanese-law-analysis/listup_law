@@ -3,14 +3,14 @@ use csv::ReaderBuilder;
 use encoding_rs::{Encoding, SHIFT_JIS};
 use log::*;
 use quick_xml::{encoding, events::*, Reader};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::{fs, fs::File, io::BufReader};
+use tokio::{fs, fs::File, io::{BufReader, AsyncReadExt}};
 use tokio_stream::StreamExt;
 
 /// 元号
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Era {
   Meiji,
   Taisho,
@@ -19,7 +19,7 @@ pub enum Era {
   Reiwa,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Date {
   pub era: Era,
   pub year: u16,
@@ -29,7 +29,7 @@ pub struct Date {
   pub day: Option<u8>,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LawData {
   pub date: Date,
   pub file: String,
@@ -191,3 +191,15 @@ pub async fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>>
   let db = &*db;
   Ok(db.clone())
 }
+
+
+pub async fn get_law_from_index(index_file_path: &str) -> Result<Vec<LawData>> {
+  let mut f = File::open(index_file_path).await?;
+  let mut buf = Vec::new();
+  f.read_to_end(&mut buf).await?;
+  let file_str = std::str::from_utf8(&buf)?;
+  let raw_data_lst = serde_json::from_str(&file_str)?;
+  Ok(raw_data_lst)
+}
+
+
