@@ -8,9 +8,6 @@ use tokio::fs::*;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio_stream::StreamExt;
 
-use listup_law;
-
-
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
@@ -82,8 +79,7 @@ async fn main() -> Result<()> {
     let f = File::open(file_path).await?;
     let mut reader = Reader::from_reader(BufReader::new(f));
     info!("[START] data write: {:?}", file_path);
-    if let Some(law_data) = listup_law::make_law_data(&mut reader, file_name, &law_id_data).await?
-    {
+    if let Some(law_data) = listup_law::make_law_data(&mut reader, file_name, &law_id_data).await? {
       let law_data_json_str = serde_json::to_string(&law_data)?;
       if is_head {
         output_file.write_all("\n".as_bytes()).await?;

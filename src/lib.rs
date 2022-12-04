@@ -3,10 +3,14 @@ use csv::ReaderBuilder;
 use encoding_rs::{Encoding, SHIFT_JIS};
 use log::*;
 use quick_xml::{encoding, events::*, Reader};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use tokio::{fs, fs::File, io::{BufReader, AsyncReadExt}};
+use tokio::{
+  fs,
+  fs::File,
+  io::{AsyncReadExt, BufReader},
+};
 use tokio_stream::StreamExt;
 
 /// 元号
@@ -22,7 +26,8 @@ pub enum Era {
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Date {
   pub era: Era,
-  pub year: u16,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub year: Option<u16>,
   #[serde(skip_serializing_if = "Option::is_none")]
   pub month: Option<u8>,
   #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +36,7 @@ pub struct Date {
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LawData {
-  pub date: Date,
+  pub date: Option<Date>,
   pub file: String,
   pub name: String,
   pub num: String,
@@ -84,9 +89,7 @@ pub async fn make_law_data(
                 .unwrap()
                 .to_string()
             })
-            .unwrap()
-            .parse()
-            .unwrap();
+            .and_then(|s| s.parse().ok());
           let month = tag
             .attributes()
             .find(|res| {
@@ -98,7 +101,7 @@ pub async fn make_law_data(
                 .unwrap()
                 .to_string()
             })
-            .map(|s| s.parse().unwrap());
+            .and_then(|s| s.parse().ok());
           let day = tag
             .attributes()
             .find(|res| {
@@ -110,7 +113,7 @@ pub async fn make_law_data(
                 .unwrap()
                 .to_string()
             })
-            .map(|s| s.parse().unwrap());
+            .and_then(|s| s.parse().ok());
           let mut law_date = law_date.lock().unwrap();
           *law_date = Some(Date {
             era,
@@ -145,7 +148,7 @@ pub async fn make_law_data(
   let law_num = &*law_num;
   if let Some(law_id_name) = law_id_map.get(law_num) {
     Ok(Some(LawData {
-      date: law_date.clone().unwrap(),
+      date: law_date.clone(),
       file: file.to_string(),
       name: law_id_name.clone().name,
       num: law_num.clone(),
@@ -192,14 +195,11 @@ pub async fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>>
   Ok(db.clone())
 }
 
-
 pub async fn get_law_from_index(index_file_path: &str) -> Result<Vec<LawData>> {
   let mut f = File::open(index_file_path).await?;
   let mut buf = Vec::new();
   f.read_to_end(&mut buf).await?;
   let file_str = std::str::from_utf8(&buf)?;
-  let raw_data_lst = serde_json::from_str(&file_str)?;
+  let raw_data_lst = serde_json::from_str(file_str)?;
   Ok(raw_data_lst)
 }
-
-
