@@ -1,8 +1,7 @@
 use anyhow::Result;
 use csv::ReaderBuilder;
 use encoding_rs::{Encoding, SHIFT_JIS};
-use log::*;
-use quick_xml::{encoding, events::*, Reader};
+use quick_xml::{encoding, events::Event, Reader};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -12,6 +11,7 @@ use tokio::{
   io::{AsyncReadExt, BufReader},
 };
 use tokio_stream::StreamExt;
+use tracing::*;
 
 /// 元号
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]

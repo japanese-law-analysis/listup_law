@@ -1,13 +1,12 @@
 use anyhow::Result;
 use clap::Parser;
-use log::*;
 use quick_xml::Reader;
-use simplelog::*;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs::*;
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio_stream::StreamExt;
+use tracing::*;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -82,13 +81,11 @@ async fn get_law_xml_file_path_lst(work_dir: &str) -> Result<HashMap<String, Law
   Ok(file_path_lst)
 }
 
-fn init_logger() -> Result<()> {
-  CombinedLogger::init(vec![TermLogger::new(
-    LevelFilter::Info,
-    Config::default(),
-    TerminalMode::Mixed,
-    ColorChoice::Auto,
-  )])?;
+async fn init_logger() -> Result<()> {
+  let subscriber = tracing_subscriber::fmt()
+    .with_max_level(tracing::Level::INFO)
+    .finish();
+  tracing::subscriber::set_global_default(subscriber)?;
   Ok(())
 }
 
@@ -96,7 +93,7 @@ fn init_logger() -> Result<()> {
 async fn main() -> Result<()> {
   let args = Args::parse();
 
-  init_logger()?;
+  init_logger().await?;
 
   info!("[START] get law id: {:?}", &args.input);
   let law_id_data = listup_law::make_law_id_data(&args.input).await?;
