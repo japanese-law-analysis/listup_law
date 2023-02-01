@@ -12,7 +12,7 @@ readme = "README.md"
 
 
 [badges]
-github = { repository = "japanese-law-analysis/listup_lawu", workflow = "Rust CI" }
+github = { repository = "japanese-law-analysis/listup_law", workflow = "Rust CI" }
 
 [dependencies]
 anyhow = "1.0.57"
