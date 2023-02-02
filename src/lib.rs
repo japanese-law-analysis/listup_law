@@ -144,12 +144,12 @@ pub struct LawPatchInfo {
 
 pub async fn file_path_to_data(dir_name: &str, file_name: &str) -> Result<(String, LawPatchInfo)> {
   let re = Regex::new(
-    r"(?P<id>[\dA-Z]{15})_(?P<ad_year>[\d]{4})(?P<month>[\d]{2})(?P<day>[\d]{2})_(?P<patch_id>[\dA-Z]{15})",
+    r"(?P<id>[\dA-Za-z]+)_(?P<ad_year>[\d]{4})(?P<month>[\d]{2})(?P<day>[\d]{2})_(?P<patch_id>[\dA-Za-z]+).xml",
   )
   .unwrap();
   let captures = re
-    .captures(dir_name)
-    .ok_or_else(|| anyhow!("ファイルのpathのparse失敗"))?;
+    .captures(file_name)
+    .ok_or_else(|| anyhow!("ファイルのpathのparse失敗：{file_name}"))?;
   let id = captures.name("id").unwrap().as_str();
   let patch_id = captures.name("patch_id").unwrap().as_str();
   let ad_year = captures
