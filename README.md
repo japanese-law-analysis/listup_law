@@ -1,4 +1,4 @@
-[![Workflow Status](https://github.com/japanese-law-analysis/listup_lawu/workflows/Rust%20CI/badge.svg)](https://github.com/japanese-law-analysis/listup_lawu/actions?query=workflow%3A%22Rust%2BCI%22)
+[![Workflow Status](https://github.com/japanese-law-analysis/listup_law/workflows/Rust%20CI/badge.svg)](https://github.com/japanese-law-analysis/listup_law/actions?query=workflow%3A%22Rust%2BCI%22)
 
 # listup_law
 
@@ -13,7 +13,7 @@ cargo install --git "https://github.com/japanese-law-analysis/listup_law.git"
 ## Use
 
 ```sh
- listup_law --output output.json --work "path/to/law_xml_directory" --input "path/to/all_law_list.csv"
+ listup_law --output output.json --work "path/to/law_xml_directory"
 ```
 
 で起動します。
@@ -21,7 +21,6 @@ cargo install --git "https://github.com/japanese-law-analysis/listup_law.git"
 それぞれのオプションの意味は以下の通りです。
 
 - `--output`：法律XMLファイル群の情報のリストを出力するJSONファイル名
-- `--input`：法令のメタデータが書かれた`all_law_list.csv`へのpath
 - `--work`：[e-gov法令検索](https://elaws.e-gov.go.jp/)からダウンロードした全ファイルが入っているフォルダへのpath
 
 ---
