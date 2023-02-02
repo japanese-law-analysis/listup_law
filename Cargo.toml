@@ -1,6 +1,6 @@
 [package]
 name = "listup_law"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2021"
 description = "法律のXMLファイルがあるフォルダから、法律の公布年月日やファイル置き場などのデータをリストアップしてJSONファイルにする"
 license = "MIT"
