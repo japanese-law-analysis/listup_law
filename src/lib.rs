@@ -9,7 +9,7 @@
 //! # Use
 //!
 //! ```sh
-//!  listup_law --output output.json --work "path/to/law_xml_directory" --input "path/to/all_law_list.csv"
+//!  listup_law --output output.json --work "path/to/law_xml_directory"
 //! ```
 //!
 //! で起動します。
@@ -17,7 +17,6 @@
 //! それぞれのオプションの意味は以下の通りです。
 //!
 //! - `--output`：法律XMLファイル群の情報のリストを出力するJSONファイル名
-//! - `--input`：法令のメタデータが書かれた`all_law_list.csv`へのpath
 //! - `--work`：[e-gov法令検索](https://elaws.e-gov.go.jp/)からダウンロードした全ファイルが入っているフォルダへのpath
 //!
 //! ---
@@ -25,20 +24,13 @@
 //! (c) 2023 Naoki Kaneko (a.k.a. "puripuri2100")
 //!
 
-use anyhow::Result;
-use csv::ReaderBuilder;
-use encoding_rs::{Encoding, SHIFT_JIS};
+use anyhow::{anyhow, Result};
+use encoding_rs::Encoding;
 use quick_xml::{encoding, events::Event, Reader};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::cmp::Ordering;
 use std::sync::{Arc, Mutex};
-use tokio::{
-  fs,
-  fs::File,
-  io::{AsyncReadExt, BufReader},
-};
-use tokio_stream::StreamExt;
-use tracing::*;
 
 /// 元号
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -50,37 +42,158 @@ pub enum Era {
   Reiwa,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Date {
+  pub ad_year: usize,
   pub era: Era,
+  pub year: usize,
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub year: Option<u16>,
+  pub month: Option<usize>,
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub month: Option<u8>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  pub day: Option<u8>,
+  pub day: Option<usize>,
+}
+
+impl PartialOrd for Date {
+  fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    if self.ad_year == other.ad_year {
+      match (self.month, other.month) {
+        (Some(m1), Some(m2)) => {
+          let month_ord = m1.cmp(&m2);
+          match month_ord {
+            Ordering::Equal => match (self.day, other.day) {
+              (Some(d1), Some(d2)) => Some(d1.cmp(&d2)),
+              _ => None,
+            },
+            _ => Some(month_ord),
+          }
+        }
+        _ => None,
+      }
+    } else {
+      Some(self.ad_year.cmp(&other.ad_year))
+    }
+  }
+}
+
+impl Ord for Date {
+  fn cmp(&self, other: &Self) -> Ordering {
+    match self.partial_cmp(other) {
+      Some(ord) => ord,
+      None => Ordering::Equal,
+    }
+  }
+}
+
+fn era_to_ad(era: &Era, year: usize) -> usize {
+  use Era::*;
+  match era {
+    Meiji => 1867 + year,
+    Taisho => 1911 + year,
+    Showa => 1925 + year,
+    Heisei => 1988 + year,
+    Reiwa => 2018 + year,
+  }
+}
+
+fn ad_to_era(year: usize, month: usize, day: usize) -> (Era, usize) {
+  use Era::*;
+  let t = year * 10000 + month * 100 + day;
+  if (18681023..=19120729).contains(&t) {
+    (Meiji, year - 1867)
+  } else if (19120730..=19261224).contains(&t) {
+    (Taisho, year - 1920)
+  } else if (19261225..=19890107).contains(&t) {
+    (Showa, year - 1925)
+  } else if (19890108..=20190430).contains(&t) {
+    (Heisei, year - 1988)
+  } else if 20190501 <= t {
+    (Reiwa, year - 2018)
+  } else {
+    unreachable!()
+  }
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LawData {
-  pub date: Option<Date>,
+  /// 制定年月日
+  pub date: Date,
+  /// ファイルのpath
   pub file: String,
+  /// 法令名
   pub name: String,
+  /// 法令番号
   pub num: String,
+  /// 法令ID
+  /// https://elaws.e-gov.go.jp/file/LawIdNamingConvention.pdf を参照
   pub id: String,
+  /// 過去のバージョン情報
+  pub patch: Vec<LawPatchInfo>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct LawPatchInfo {
+  pub dir_name: String,
+  pub file_name: String,
+  /// 法令ID
+  pub id: String,
+  /// 改正・成立年月日
+  pub patch_date: Date,
+  /// 改正した法令の名前
+  pub patch_id: String,
+}
+
+pub async fn file_path_to_data(dir_name: &str, file_name: &str) -> Result<(String, LawPatchInfo)> {
+  let re = Regex::new(
+    r"(?P<id>[\dA-Z]{15})_(?P<ad_year>[\d]{4})(?P<month>[\d]{2})(?P<day>[\d]{2})_(?P<patch_id>[\dA-Z]{15})",
+  )
+  .unwrap();
+  let captures = re
+    .captures(dir_name)
+    .ok_or_else(|| anyhow!("ファイルのpathのparse失敗"))?;
+  let id = captures.name("id").unwrap().as_str();
+  let patch_id = captures.name("patch_id").unwrap().as_str();
+  let ad_year = captures
+    .name("ad_year")
+    .unwrap()
+    .as_str()
+    .parse::<usize>()?;
+  let month = captures.name("month").unwrap().as_str().parse::<usize>()?;
+  let day = captures.name("day").unwrap().as_str().parse::<usize>()?;
+  let (era, year) = ad_to_era(ad_year, month, day);
+  let date = Date {
+    ad_year,
+    era,
+    year,
+    month: Some(month),
+    day: Some(day),
+  };
+  Ok((
+    id.to_string(),
+    LawPatchInfo {
+      dir_name: dir_name.to_string(),
+      file_name: file_name.to_string(),
+      id: id.to_string(),
+      patch_date: date,
+      patch_id: patch_id.to_string(),
+    },
+  ))
 }
 
 pub async fn make_law_data(
-  reader: &mut Reader<BufReader<File>>,
-  file: &str,
-  law_id_map: &HashMap<String, LawId>,
+  xml_buf: &[u8],
+  info: &LawPatchInfo,
+  version_info: &[LawPatchInfo],
 ) -> Result<Option<LawData>> {
   let utf8 = Encoding::for_label(b"utf-8").unwrap();
 
+  let mut reader = Reader::from_reader(xml_buf);
   let mut buf = Vec::new();
 
   let mut is_law_num_mode = false;
+  let mut is_law_name_mode = false;
+  let mut is_ruby_mode = false;
   let law_num = Arc::new(Mutex::new(String::new()));
+  let law_name = Arc::new(Mutex::new(String::new()));
   let law_date = Arc::new(Mutex::new(None));
 
   reader.trim_text(true);
@@ -116,7 +229,8 @@ pub async fn make_law_data(
                 .unwrap()
                 .to_string()
             })
-            .and_then(|s| s.parse().ok());
+            .and_then(|s| s.parse().ok())
+            .unwrap();
           let month = tag
             .attributes()
             .find(|res| {
@@ -143,6 +257,7 @@ pub async fn make_law_data(
             .and_then(|s| s.parse().ok());
           let mut law_date = law_date.lock().unwrap();
           *law_date = Some(Date {
+            ad_year: era_to_ad(&era, year),
             era,
             year,
             month,
@@ -150,17 +265,23 @@ pub async fn make_law_data(
           })
         }
         b"LawNum" => is_law_num_mode = true,
+        b"LawTitle" => is_law_name_mode = true,
+        b"Ruby" => is_ruby_mode = true,
         _ => (),
       },
-      Ok(Event::End(tag)) => {
-        if let b"LawNum" = tag.name().as_ref() {
-          is_law_num_mode = false
-        }
-      }
+      Ok(Event::End(tag)) => match tag.name().as_ref() {
+        b"LawNum" => is_law_num_mode = false,
+        b"LawTitle" => is_law_name_mode = false,
+        b"Ruby" => is_ruby_mode = false,
+        _ => {}
+      },
       Ok(Event::Text(text)) => {
-        if is_law_num_mode {
+        if is_law_num_mode && !is_ruby_mode {
           let mut law_num = law_num.lock().unwrap();
           *law_num = encoding::decode(&text.into_inner(), utf8)?.to_string();
+        } else if is_law_name_mode && !is_ruby_mode {
+          let mut law_name = law_name.lock().unwrap();
+          *law_name = encoding::decode(&text.into_inner(), utf8)?.to_string();
         }
       }
       Ok(Event::Eof) => break,
@@ -173,60 +294,14 @@ pub async fn make_law_data(
   let law_date = &*law_date;
   let law_num = law_num.lock().unwrap();
   let law_num = &*law_num;
-  if let Some(law_id_name) = law_id_map.get(law_num) {
-    Ok(Some(LawData {
-      date: law_date.clone(),
-      file: file.to_string(),
-      name: law_id_name.clone().name,
-      num: law_num.clone(),
-      id: law_id_name.clone().id,
-    }))
-  } else {
-    error!("Not Found LawId: {}", &law_num);
-    Ok(None)
-  }
-}
-
-#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub struct LawId {
-  /// LawIdタグ
-  pub id: String,
-  /// LawNameタグ 法令名称
-  pub name: String,
-}
-
-/// `all_law_list.csv`ファイルをもとに法令IDなどを取得する
-/// 法令種別,法令番号,法令名,法令名読み,旧法令名,公布日,改正法令名,改正法令番号,改正法令公布日,施行日,施行日備考,法令ID,本文URL,未施行,所管課確認中
-pub async fn make_law_id_data(file_path: &str) -> Result<HashMap<String, LawId>> {
-  let s = fs::read(file_path).await?;
-  let (res, _, _) = SHIFT_JIS.decode(&s);
-  let csv_str_utf8 = res.into_owned();
-  let mut reader = ReaderBuilder::new().from_reader(csv_str_utf8.as_bytes());
-
-  let db = Arc::new(Mutex::new(HashMap::new()));
-
-  let mut reader_stream = tokio_stream::iter(reader.records());
-  while let Some(data) = reader_stream.next().await {
-    let data = data?;
-    //print!("{:?}", data.get(1));
-    let mut db = db.lock().unwrap();
-    let law_id = LawId {
-      id: data.get(11).unwrap().to_string(),
-      name: data.get(2).unwrap().to_string(),
-    };
-    db.insert(data.get(1).unwrap().to_string(), law_id);
-  }
-
-  let db = db.lock().unwrap();
-  let db = &*db;
-  Ok(db.clone())
-}
-
-pub async fn get_law_from_index(index_file_path: &str) -> Result<Vec<LawData>> {
-  let mut f = File::open(index_file_path).await?;
-  let mut buf = Vec::new();
-  f.read_to_end(&mut buf).await?;
-  let file_str = std::str::from_utf8(&buf)?;
-  let raw_data_lst = serde_json::from_str(file_str)?;
-  Ok(raw_data_lst)
+  let law_name = law_name.lock().unwrap();
+  let law_name = &*law_name;
+  Ok(Some(LawData {
+    date: law_date.clone().unwrap(),
+    file: format!("{}/{}", info.dir_name, info.file_name),
+    name: law_name.clone(),
+    num: law_num.clone(),
+    id: info.id.clone(),
+    patch: version_info.to_vec(),
+  }))
 }
