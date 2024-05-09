@@ -1,12 +1,13 @@
 [package]
 name = "listup_law"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2021"
 description = "法律のXMLファイルがあるフォルダから、法律の公布年月日やファイル置き場などのデータをリストアップしてJSONファイルにする"
 license = "MIT"
 authors = ["Naoki Kaneko <puripuri2100@gmail.com>"]
 repository = "https://github.com/japanese-law-analysis/listup_law.git"
 readme = "README.md"
+rust-version = "1.74.1"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,14 +16,14 @@ readme = "README.md"
 github = { repository = "japanese-law-analysis/listup_law", workflow = "Rust CI" }
 
 [dependencies]
-anyhow = "1.0.57"
-clap = {version = "4.1.4", features = ["derive"] }
-encoding_rs = "0.8.31"
-quick-xml = { version = "0.26.0", features = ["async-tokio", "encoding"]}
-regex = "1.7.1"
-serde = {version = "1.0.137", features = ["derive"]}
-serde_json = "1.0.81"
-tokio = { version = "1.22.0", features = ["full"]}
-tokio-stream = "0.1.11"
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.16",  features = ["registry"] }
+jplaw_io = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "dff692b" }
+jplaw_data_types = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "dff692b" }
+japanese_law_xml_schema = "4.0.0"
+serde = { version = "1.0.201", features = ["derive"] }
+clap = { version = "4.5.4", features = ["derive"] }
+tokio = { version = "1.37.0", features = ["full"] }
+tokio-stream = "0.1.15"
+serde_json = "1.0.117"
+anyhow = "1.0.83"
+regex = "1.10.4"
+tracing = "0.1.40"
