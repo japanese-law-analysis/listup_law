@@ -3,7 +3,6 @@ use anyhow::{anyhow, Result};
 use clap::Parser;
 use jplaw_data_types::{
   self,
-  article::text_to_str,
   law::{Date, LawId, LawPatchInfo},
   listup::LawInfo,
 };
@@ -69,11 +68,11 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
               patch_date,
               patch_id,
             });
-            info_lst.insert(law_id, LawInfo {patch, ..d.clone()});
+            info_lst.insert(law_id, LawInfo { patch, ..d.clone() });
           } else {
             let num = law.law_num;
             let name = if let Some(title) = law.law_body.law_title {
-              text_to_str(&title.text)
+              title.text.to_string()
             } else {
               wran_log("not found title", &file_name_string);
               String::new()
