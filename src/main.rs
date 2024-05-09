@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use anyhow::{anyhow, Result};
 use clap::Parser;
 use jplaw_data_types::{
@@ -7,7 +8,7 @@ use jplaw_data_types::{
   listup::LawInfo,
 };
 use jplaw_io::{
-  error_log, flush_file_value_lst, gen_file_value_lst, info_log, init_logger, wran_log,
+  end_log, flush_file_value_lst, gen_file_value_lst, info_log, init_logger, start_log, wran_log,
   write_value_lst,
 };
 use regex::Regex;
@@ -15,7 +16,6 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::str::FromStr;
 use tokio::fs::*;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
 use tracing::*;
 
@@ -47,13 +47,15 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
           let dir_string = dir_entry.file_name().to_str().unwrap().to_string();
           let file_name_osstr = new_entry.file_name();
           let file_name_string = file_name_osstr.to_str().unwrap().to_string();
-          let file_path = format!("{dir_string}/{file_name_string}");
+          let file_path = format!("{work_dir}/{dir_string}/{file_name_string}");
+          info_log("xml path", &file_path);
           let law = japanese_law_xml_schema::parse_xml_file(&file_path)?;
           let date = Date::new(law.era, law.year, None, None);
           let caps = path_re
             .captures(&file_name_string)
             .ok_or(anyhow!("cannot parse file path"))?;
           let law_id = LawId::from_str(&caps["id"]).unwrap();
+          info_log("law_id", &law_id.to_string());
           if let Some(d) = info_lst.get(&law_id) {
             let patch_date = Date::gen_from_ad(
               caps["ad_year"].parse::<usize>().unwrap(),
@@ -61,7 +63,13 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
               caps["day"].parse::<usize>().unwrap(),
             );
             let patch_id = LawId::from_str(&caps["patch_id"]).ok();
-            d.clone().patch.push(LawPatchInfo {id: law_id, patch_date, patch_id});
+            let mut patch = d.clone().patch;
+            patch.push(LawPatchInfo {
+              id: law_id.clone(),
+              patch_date,
+              patch_id,
+            });
+            info_lst.insert(law_id, LawInfo {patch, ..d.clone()});
           } else {
             let num = law.law_num;
             let name = if let Some(title) = law.law_body.law_title {
@@ -76,13 +84,20 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
               caps["day"].parse::<usize>().unwrap(),
             );
             let patch_id = LawId::from_str(&caps["patch_id"]).ok();
-            info_lst.insert(law_id.clone(), LawInfo {
-              date,
-              name,
-              num,
-              id: law_id.clone(),
-              patch: vec![LawPatchInfo {id: law_id, patch_date, patch_id}]
-            });
+            info_lst.insert(
+              law_id.clone(),
+              LawInfo {
+                date,
+                name,
+                num,
+                id: law_id.clone(),
+                patch: vec![LawPatchInfo {
+                  id: law_id,
+                  patch_date,
+                  patch_id,
+                }],
+              },
+            );
           }
         }
       }
@@ -104,13 +119,15 @@ async fn main() -> Result<()> {
   info!("[START] write json file");
   let mut output_file = gen_file_value_lst(&args.output).await?;
 
-  let mut is_head = true;
-
   let mut law_info_lst_stream = tokio_stream::iter(law_info_lst);
 
-  while let Some((id, lst)) = law_info_lst_stream.next().await {
-    let mut lst = lst.patch;
+  while let Some((id, data)) = law_info_lst_stream.next().await {
+    start_log("write law info", &id);
+    let mut lst = data.clone().patch;
     lst.sort_by(|a, b| a.patch_date.cmp(&b.patch_date));
+    info_log("patch list", &lst);
+    write_value_lst(&mut output_file, data).await?;
+    end_log("write law info", &id);
   }
   flush_file_value_lst(&mut output_file).await?;
   info!("[END] write json file");
