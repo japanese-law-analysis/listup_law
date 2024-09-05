@@ -289,8 +289,8 @@ dependencies = [
 
 [[package]]
 name = "jplaw_data_types"
-version = "0.1.0"
-source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=dff692b#dff692be80187a8fdf3eb99643e28b5d511eb81a"
+version = "0.2.1"
+source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.1#f0950986dcd5082826733498703a8b9ce6197be4"
 dependencies = [
  "japanese_law_xml_schema",
  "serde",
@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "jplaw_io"
-version = "0.1.0"
-source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=dff692b#dff692be80187a8fdf3eb99643e28b5d511eb81a"
+version = "0.2.1"
+source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.1#f0950986dcd5082826733498703a8b9ce6197be4"
 dependencies = [
  "serde",
  "serde_json",
@@ -351,7 +351,7 @@ checksum = "ae743338b92ff9146ce83992f766a31066a91a8c84a45e0e9f21e7cf6de6d346"
 
 [[package]]
 name = "listup_law"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "clap",
