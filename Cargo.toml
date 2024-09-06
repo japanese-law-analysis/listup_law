@@ -1,6 +1,6 @@
 [package]
 name = "listup_law"
-version = "0.7.1"
+version = "0.7.2"
 edition = "2021"
 description = "法律のXMLファイルがあるフォルダから、法律の公布年月日やファイル置き場などのデータをリストアップしてJSONファイルにする"
 license = "MIT"
@@ -18,7 +18,7 @@ github = { repository = "japanese-law-analysis/listup_law", workflow = "Rust CI"
 [dependencies]
 jplaw_io = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "0.2.1" }
 jplaw_data_types = { git = "https://github.com/japanese-law-analysis/jplaw_tools.git", rev = "0.2.1" }
-japanese_law_xml_schema = "4.0.0"
+japanese_law_xml_schema = "4.0.2"
 serde = { version = "1.0.201", features = ["derive"] }
 clap = { version = "4.5.4", features = ["derive"] }
 tokio = { version = "1.37.0", features = ["full"] }
