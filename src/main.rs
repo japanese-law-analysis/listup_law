@@ -61,7 +61,15 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
               caps["month"].parse::<usize>().unwrap(),
               caps["day"].parse::<usize>().unwrap(),
             );
-            let patch_id = LawId::from_str(&caps["patch_id"]).ok();
+            let re_patch_id_str = &caps["patch_id"];
+            let patch_id = LawId::from_str(re_patch_id_str).ok();
+            if let Some(id) = &patch_id {
+              let s = format!("{id}");
+              if re_patch_id_str != s {
+                error!("{} != {}({:?})", re_patch_id_str, id, id);
+                panic!()
+              }
+            }
             let mut patch = d.clone().patch;
             patch.push(LawPatchInfo {
               id: law_id.clone(),
