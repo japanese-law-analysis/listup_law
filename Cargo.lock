@@ -289,8 +289,8 @@ dependencies = [
 
 [[package]]
 name = "jplaw_data_types"
-version = "0.2.3"
-source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.3#fab5c02e26cdfa023128afb5d9f918f5bf2359a0"
+version = "0.2.4"
+source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.4#2a716e14b67394d5e8a8ce10473a591f03676556"
 dependencies = [
  "japanese_law_xml_schema",
  "serde",
@@ -299,8 +299,8 @@ dependencies = [
 
 [[package]]
 name = "jplaw_io"
-version = "0.2.3"
-source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.3#fab5c02e26cdfa023128afb5d9f918f5bf2359a0"
+version = "0.2.4"
+source = "git+https://github.com/japanese-law-analysis/jplaw_tools.git?rev=0.2.4#2a716e14b67394d5e8a8ce10473a591f03676556"
 dependencies = [
  "serde",
  "serde_json",
