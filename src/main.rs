@@ -53,8 +53,13 @@ async fn get_law_info_lst(work_dir: &str) -> Result<HashMap<LawId, LawInfo>> {
           let caps = path_re
             .captures(&file_name_string)
             .ok_or(anyhow!("cannot parse file path"))?;
-          let law_id = LawId::from_str(&caps["id"]).unwrap();
+          let re_law_id_str = &caps["id"];
+          let law_id = LawId::from_str(re_law_id_str).unwrap();
           info_log("law_id", &law_id.to_string());
+          if re_law_id_str != format!("{law_id}") {
+            error!("{} != {}({:?})", re_law_id_str, law_id, law_id);
+            panic!()
+          }
           if let Some(d) = info_lst.get(&law_id) {
             let patch_date = Date::gen_from_ad(
               caps["ad_year"].parse::<usize>().unwrap(),
